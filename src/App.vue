@@ -1,4 +1,5 @@
 <template>
+<div>
   <h1>TASK MASTER</h1>
   <div id="app">
     <h1>Your Tasks</h1>
@@ -16,6 +17,7 @@
         </task-item>
       </li>
     </ul>
+  </div>
   </div>
 </template>
 
@@ -37,25 +39,110 @@
     methods: {
       addTask(taskLabel) {
         console.log("Task added:", taskLabel);
-        this.TaskItems.push({
+        const task = {
           id: uniqueId('task-'),
           label: taskLabel,
           done: false
+        }
+        this.TaskItems.push(task);
+        this.addTaskToDB(task);
+      },
+      async addTaskToDB(task) {
+        return new Promise((resolve, reject) => {
+          let trans = this.db.transaction(['tasks'],'readwrite');
+          trans.oncomplete = e => {
+            console.log("Completed transfering task!!!")
+            resolve();
+          };
+
+          let store = trans.objectStore('tasks');
+          store.add(task);
+          console.log(task);
+        });
+      },
+      async getTasksFromDb() {
+        return new Promise((resolve, reject) => {
+          let trans = this.db.transaction(['tasks'],'readonly');
+          trans.oncomplete = e => {
+            resolve(tasks);
+          };
+          let store = trans.objectStore('tasks');
+          let tasks = [];
+          store.openCursor().onsuccess = e => {
+            let cursor = e.target.result;
+            if (cursor) {
+              tasks.push(cursor.value)
+              cursor.continue();
+            }
+          };
         });
       },
       updateDoneStatus(taskId) {
         const taskToUpdate = this.TaskItems.find((item) => item.id === taskId);
         taskToUpdate.done = !taskToUpdate.done;
+        this.updateTaskFromDb(taskToUpdate);
+      },
+      async updateTaskFromDb(task) {
+        return new Promise((resolve, reject) => {
+          let trans = this.db.transaction(['tasks'], 'readwrite');
+          trans.oncomplete = e => {
+            resolve(task);
+          };
+          let store = trans.objectStore('tasks');
+          console.log({...task});
+          store.put({...task});
+        })
       },
       deleteTask(taskId) {
         const itemIndex = this.TaskItems.findIndex((item) => item.id === taskId);
         this.TaskItems.splice(itemIndex, 1);
+        this.deleteTaskFromDb(taskId);
         this.$refs.listSummary.focus();
+      },
+      async deleteTaskFromDb(taskId) {
+        return new Promise((resolve, reject) => {
+          let trans = this.db.transaction(['tasks'],'readwrite');
+          trans.oncomplete = e => {
+            resolve();
+          };
+
+          let store = trans.objectStore('tasks');
+          store.delete(taskId);
+        });
       },
       editTask(taskId, newLabel) {
         const taskToEdit = this.TaskItems.find((item) => item.id === taskId);
         taskToEdit.label = newLabel;
+        this.updateTaskFromDb(taskToEdit);
       },
+      async getDb() {
+        return new Promise((resolve, reject) => {
+          let request = window.indexedDB.open('taskdb', 1);
+          console.log(request)
+          request.onerror = e => {
+            console.log('Error opening db', e);
+            reject(e);
+          };
+
+          request.onsuccess = e => {
+            resolve(e.target.result);
+          };
+
+          request.onupgradeneeded = e => {
+            console.log('onupgradeneeded');
+            let db = e.target.result;
+            let objectStore = db.createObjectStore("tasks", { autoIncrement: true, keyPath:'id' });
+          };
+        });
+      },
+
+    },
+    async created() {
+      console.log("Hello")
+      this.db = await this.getDb();
+      console.log(this.db);
+      this.TaskItems = await this.getTasksFromDb();
+      console.log(this.TaskItems)
     },
     computed: {
       listSummary() {
@@ -178,101 +265,3 @@
     margin-bottom: 1rem;
   }
 </style>
-
-
-<!-- <script setup>
-  import { ref, onMounted, computed, watch } from 'vue'
-
-  const tasks = ref([])
-  const name = ref('')
-  const input_content = ref('')
-  const input_category = ref(null)
-  const tasks_asc = computed(() => tasks.value.sort((a, b) => {
-    return a.createdAt - b.createdAt
-  }))
-
-  watch(name, (newVal) => {
-    localStorage.setItem('name', newVal)
-  })
-
-  watch(tasks, (newVal) => {
-    localStorage.setItem('tasks', JSON.stringify(newVal))
-  }, { deep: true })
-
-  const addTask = () => {
-    if (input_content.value.trim === '' || input_category.value === null) {
-      return
-    }
-
-    tasks.value.push({
-      content: input_content.value,
-      category: input_category.value,
-      done: false,
-      createdAt: new Date().getTime()
-    })
-
-    input_content.value = ''
-    input_category.value = null
-  }
-
-  const removeTask = task => {
-    tasks.value = tasks.value.filter(t => t !== task)
-  }
-
-  onMounted(() => {
-    name.value = localStorage.getItem('name') || ''
-    tasks.value = JSON.parse(localStorage.getItem('tasks')) || []
-  })
-
-</script>
-
-<template>
-  <main class="app">
-    <section class="greeting">
-      <h2>
-        Greetings, <input type="text" placeholder="Your name here" v-model="name" />
-      </h2>
-    </section>
-    <section class="create-task">
-      <h3>Create Task:</h3>
-
-      <form @submit.prevent="addTask">
-        <h4>What is your next task?</h4>
-        <input type="text" placeholder="Task content" v-model="input_content" />
-        <h4>Business or Personal?</h4>
-        <div class="options">
-          <label>
-            <input type="radio" name="category" value="business" v-model="input_category" />
-            <span class="bubble business"></span>
-            <div>Business</div>
-          </label>
-          <label>
-            <input type="radio" name="category" value="personal" v-model="input_category" />
-            <span class="bubble personal"></span>
-            <div>Personal</div>
-          </label>
-        </div>
-        <input type="submit" value="Add Task" />
-      </form>
-    </section>
-    <section class="task-list">
-      <h3>Task List:</h3>
-      <div class="list">
-        <div v-for="task in tasks_asc" :class="`task-item ${task.done && 'done'}`">
-          <label>
-            <input type="checkbox" v-model="todo.done" />
-            <span :class="`bubble ${task.category}`"></span>
-          </label>
-          <div class="task-content">
-            <input type="text" v-model="task.content" />
-          </div>
-          <div class="actions">
-            <button class="remove" @click="removeTask(task)">Remove</button>
-          </div>
-        </div>
-      </div>
-    </section>
-  </main>
-</template> -->
-
-
