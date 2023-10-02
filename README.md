@@ -29,6 +29,7 @@ Once you no longer need your task being displayed, you can simply click on the "
 
 - Vue
 - Vite
+- CSS
 - JavaScript
 - IndexedDB
 - Netlify
